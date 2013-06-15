@@ -36,7 +36,8 @@
 
     var _generator = null,
         _assetGenerationDir = null,
-        _contextPerLayer = {};
+        _contextPerLayer = {},
+        _photoshopState = {};
 
     function getUserHomeDirectory() {
         return process.env[(process.platform === "win32") ? "USERPROFILE" : "HOME"];
@@ -73,9 +74,16 @@
 
     function handleImageChanged(document) {
         if (document.id && document.layers) {
+            cacheLayerInfo(document);
             document.layers.forEach(function (layer) {
                 handleImageChangedForLayer(document, layer);
             });
+        }
+        // New document is coming by
+        if (document.id && document.file && !_photoshopState[document.id]) {
+            // Capture the filename, then ask for the layer data.
+            _photoshopState[document.id] = { file: document.file };
+            requestStateUpdate();
         }
     }
 
@@ -103,7 +111,7 @@
 
         scheduleLayerUpdate(_contextPerLayer[contextID]);
     }
-
+    
     // Run the update now if none is in progress, or wait until the current one is finished
     function scheduleLayerUpdate(layerContext) {
         // If no update is scheduled or the scheduled update is still being delayed, start from scratch
@@ -178,7 +186,7 @@
 
         return layerUpdatedDeferred.promise;
     }
-
+    
     // Run a pending update if necessary
     function finishLayerUpdate(layerContext) {
         layerContext.updateIsScheduled = false;
@@ -193,10 +201,77 @@
             delete _contextPerLayer[layerContext.contextID];
         }
     }
+
+    function requestStateUpdate() {
+        _generator.getDocumentInfo().then(
+            function () {
+                _generator.publish("assets.debug.psState", "Requested PS State");
+            },
+            function (err) {
+                _generator.publish("assets.debug.psState", "error requestiong state: " + err);
+            });
+    }
+
+    function cacheLayerInfo(document) {
+        var docID = document.id;
+        if (! _photoshopState[docID]) {
+            _photoshopState[docID] = document;
+            console.log("Updating layers for an unknown document #" + docID + "?");
+        }
+        else if (document.layers) {
+            document.layers.forEach(function (layerInfo) {
+                if (_photoshopState[docID].layerMap[layerInfo.id]) {
+                    Object.keys(layerInfo).forEach(function (layerItem) {
+                        _photoshopState[docID].layerMap[layerInfo.id][layerItem] = layerInfo[layerItem];
+                    });
+                } else {
+                    // New layer
+                    _photoshopState[docID].layers.push(layerInfo);
+                    _photoshopState[docID].layerMap[layerInfo.id] = layerInfo;
+                }
+                // Need to also handle deleting a layer, but that currently crashes PS
+            });
+        }
+    }
+
+    // Build a map for the layers so we don't have to search the list.
+    function updateLayerDict(docID) {
+        var doc = _photoshopState[docID];
+        var layerMap = {};
+        if (doc.layers) {
+            doc.layers.forEach(function (layer) {
+                layerMap[layer.id] = layer;
+            });
+            doc.layerMap = layerMap;
+        }
+    }
+
+    // Called when the entire layer state is sent in response to requestStateUpdate()
+    function handlePsInfoMessage(message) {
+        if (message.body.hasOwnProperty("id")) {
+            var docID = message.body.id;
+            var saveFilename = null;
+            _generator.publish("generator.info.psState", "Receiving PS state info");
+
+            // First, preserve the filename if we already have it.
+            if (_photoshopState[docID] && _photoshopState[docID].file) {
+                saveFilename = _photoshopState[docID].file;
+            }
+
+            _photoshopState[docID] = message.body;
+            updateLayerDict(docID);
+
+            if (saveFilename) {
+                _photoshopState[docID].file = saveFilename;
+            }
+        }
+    }
     
     function init(generator) {
         _generator = generator;
         _generator.subscribe("photoshop.event.imageChanged", handleImageChanged);
+        _generator.subscribe("photoshop.message", handlePsInfoMessage);
+        requestStateUpdate();
 
         // create a place to save assets
         var homeDir = getUserHomeDirectory();
