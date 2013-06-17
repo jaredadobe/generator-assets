@@ -72,8 +72,10 @@
     }
 
     function handleImageChanged(document) {
+        console.log("Image changed");
         if (document.id && document.layers) {
             document.layers.forEach(function (layer) {
+                console.log("Layer: ", layer);
                 handleImageChangedForLayer(document, layer);
             });
         }
@@ -144,8 +146,16 @@
         }
 
         function createLayerImage() {
+            var start = new Date();
+            console.log("Requesting the pixmap to update the layer");
             _generator.getPixmap(changeContext.layer.id, 100).then(
                 function (pixmap) {
+                    var stop = new Date();
+                    var duration = stop.getTime() - start.getTime();
+                    var speed = Math.round((duration / (pixmap.width * pixmap.height) * 1000) * 1000) / 1000;
+                    var summary = "Pixmap for layer " + changeContext.layer.id + ": " + duration + "ms (" + speed + "ms/kpx) at " + pixmap.width + " x " + pixmap.height;
+                    console.log(summary);
+                    _generator.publish("assets.debug.summary", summary);
                     var fileName = changeContext.document.id + "-" + changeContext.layer.id + ".png",
                         path     = resolve(_assetGenerationDir, fileName);
 
@@ -159,6 +169,7 @@
                         // Save the image in a temporary file
                         savePixmap(pixmap, tmpPath)
                             .fail(function (err) {
+                                console.log("Error saving pixmap for layer " + changeContext.layer.id, err);
                                 layerUpdatedDeferred.reject(err);
                             })
                             // When ImageMagick is done
@@ -175,6 +186,7 @@
                     }
                 },
                 function (err) {
+                    console.log("Error getting pixmap for layer " + changeContext.layer.id, err);
                     _generator.publish("assets.error.getPixmap", "Error: " + err);
                     layerUpdatedDeferred.reject(err);
                 }
