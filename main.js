@@ -202,16 +202,6 @@
         }
     }
 
-    function requestStateUpdate() {
-        _generator.getDocumentInfo().then(
-            function () {
-                _generator.publish("assets.debug.psState", "Requested PS State");
-            },
-            function (err) {
-                _generator.publish("assets.debug.psState", "error requestiong state: " + err);
-            });
-    }
-
     function cacheLayerInfo(document) {
         var docID = document.id;
         if (! _photoshopState[docID]) {
@@ -234,24 +224,11 @@
         }
     }
 
-    // Build a map for the layers so we don't have to search the list.
-    function updateLayerDict(docID) {
-        var doc = _photoshopState[docID];
-        var layerMap = {};
-        if (doc.layers) {
-            doc.layers.forEach(function (layer) {
-                layerMap[layer.id] = layer;
-            });
-            doc.layerMap = layerMap;
-        }
-    }
-
     // Called when the entire layer state is sent in response to requestStateUpdate()
     function handlePsInfoMessage(message) {
         if (message.body.hasOwnProperty("id")) {
             var docID = message.body.id;
             var saveFilename = null;
-            _generator.publish("generator.info.psState", "Receiving PS state info");
 
             // First, preserve the filename if we already have it.
             if (_photoshopState[docID] && _photoshopState[docID].file) {
@@ -259,18 +236,34 @@
             }
 
             _photoshopState[docID] = message.body;
-            updateLayerDict(docID);
+            var doc = _photoshopState[docID];
+            doc.layerMap = {};
+            if (doc.layers) {
+                doc.layers.forEach(function (layer) {
+                    doc.layerMap[layer.id] = layer;
+                });
+            }
 
             if (saveFilename) {
                 _photoshopState[docID].file = saveFilename;
             }
         }
     }
+
+    function requestStateUpdate() {
+        _generator.getDocumentInfo().then(
+            function (data) {
+                _generator.publish("assets.debug.psState", data);
+                handlePsInfoMessage(data);
+            },
+            function (err) {
+                _generator.publish("assets.debug.psState", "error requestiong state: " + err);
+            });
+    }
     
     function init(generator) {
         _generator = generator;
         _generator.subscribe("photoshop.event.imageChanged", handleImageChanged);
-        _generator.subscribe("photoshop.message", handlePsInfoMessage);
         requestStateUpdate();
 
         // create a place to save assets
