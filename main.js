@@ -196,6 +196,16 @@
     
     function init(generator) {
         _generator = generator;
+
+        _generator.addMenuItem("asdf", "a menü", true, true).then(
+            function () {
+                _generator.publish("assets.debug.menu.created", "asdf");
+            },
+            function (err) {
+                _generator.publish("assets.debug.menu.error", err);
+            }
+        );
+
         _generator.subscribe("photoshop.event.imageChanged", handleImageChanged);
 
         // create a place to save assets
