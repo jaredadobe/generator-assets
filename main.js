@@ -76,6 +76,30 @@
         return fileCompleteDeferred.promise;
     }
 
+    function handlePathChanged(newPath) {
+
+        function generateImagesFromLayers() {
+            _assetGenerationDir = newPath;
+            handleImageChanged(_generator.photoshop.getDocumentInfo());
+        }
+        fs.exists(newPath, function (exists) {
+            if (!exists) {
+                generateImagesFromLayers();
+            } else {
+                mkdirp(newPath, function (err) {
+                    if (err) {
+                        _generator.publish(
+                            "assets.error.init",
+                            "Could not create directory '" + newPath + "', no assets will be dumped");
+                    } else {
+                        generateImagesFromLayers();
+                    }
+                });
+            }
+        });
+
+    }
+
     function handleImageChanged(document) {
         if (document.id && document.layers) {
             document.layers.forEach(function (layer) {
@@ -236,6 +260,7 @@
             function (path) {
                 _photoshopPath = path;
                 _generator.subscribe("photoshop.event.imageChanged", handleImageChanged);
+                _generator.subscribe("generator.event.pathChange", handlePathChanged);
             },
             function (err) {
                 _generator.publish(
